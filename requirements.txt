@@ -1,0 +1,8 @@
+io
+streamlit
+audiorecorder
+python-dotenv
+openai
+hashlib
+qdrant_client
+qdrant_client.models
