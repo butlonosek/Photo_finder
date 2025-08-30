@@ -6,8 +6,23 @@ st.set_page_config(page_title='Photo finder',layout='wide')
 from dotenv import dotenv_values
 from openai import OpenAI
 import base64
+from qdrant_client import QdrantClient
+from qdrant_client.http import models as qmodels
 
 env = dotenv_values(".env")
+
+qdrant = QdrantClient(
+    url=env["QDRANT_URL"], 
+    api_key=env["QDRANT_API_KEY"],
+)
+
+qdrant.recreate_collection(
+    collection_name="photos",
+    vectors_config=qmodels.VectorParams(
+        size=3072, # rozmiar wektora z text-embedding-3-large
+        distance=qmodels.Distance.COSINE,
+    ),
+)
 
 # OpenAI API key protection
 
@@ -26,6 +41,14 @@ if not st.session_state.get("openai_api_key"):
 
 if not st.session_state.get("openai_api_key"):
     st.stop()
+
+qdrant.recreate_collection(
+    collection_name="photos",
+    vectors_config=qmodels.VectorParams(
+        size=3072, # rozmiar wektora z text-embedding-3-large
+        distance=qmodels.Distance.COSINE,
+    ),
+)
 
 def prepare_image_for_open_ai(image_path):
     with open(image_path, "rb") as f:
@@ -80,14 +103,32 @@ if photos:
   with open(DATA_PATH/time/file.name,'wb') as f:
    f.write(file.read())
   with open(f'{DATA_PATH/time}/opis.txt','w') as f:
-   image_description=describe_image(DATA_PATH/time/file.name)
-   openai_client=get_openai_client()
-   result=openai_client.embeddings.create(
-     input=[image_description],
-     model='text-embedding-3-large'
-   )
-   result[time]=image_description
-   f.write(image_description)
+    image_description=describe_image(DATA_PATH/time/file.name)
+    
+    # embedding opisu
+    openai_client = get_openai_client()
+    embedding = openai_client.embeddings.create(
+        input=[image_description],
+        model="text-embedding-3-large"
+    )
+    vector = embedding.data[0].embedding
+
+    qdrant.upsert(
+        collection_name="photos",
+        points=[
+            qmodels.PointStruct(
+                id=int(pd.Timestamp('now').timestamp() * 1e6),  # unikalne ID
+                vector=vector,
+                payload={
+                    "filename": file.name,
+                    "time": time,
+                    "description": image_description
+                }
+            )
+        ]
+    )
+
+    f.write(image_description)
  photos=False
  st.markdown("""
             <script>
@@ -98,3 +139,40 @@ if photos:
               unsafe_allow_html=True 
             )
  st.success(f"Zapisano pliki w {DATA_PATH}")
+
+# -----------------------
+# 🔍 Wyszukiwarka zdjęć
+# -----------------------
+def search_similar(query: str, top_k: int = 5):
+    openai_client = get_openai_client()
+    embedding = openai_client.embeddings.create(
+        input=[query],
+        model="text-embedding-3-large"
+    )
+    vector = embedding.data[0].embedding
+
+    results = qdrant.search(
+        collection_name="photos",
+        query_vector=vector,
+        limit=top_k,
+    )
+    return results
+
+st.header("🔍 Wyszukiwarka zdjęć")
+query = st.text_input("Wpisz zapytanie (np. 'pies na trawie')")
+
+if query:
+    results = search_similar(query)
+    st.subheader("Najbardziej podobne zdjęcia:")
+    for r in results:
+        payload = r.payload
+        st.write(f"📄 **Plik:** {payload['filename']}")
+        st.write(f"📝 **Opis:** {payload['description']}")
+        st.write(f"📊 **Podobieństwo:** {r.score:.3f}")
+
+        image_path = list(DATA_PATH.glob(f"{payload['time']}/{payload['filename']}"))
+        if image_path:
+            st.image(str(image_path[0]), width=250)
+
+        st.markdown("---")
+
