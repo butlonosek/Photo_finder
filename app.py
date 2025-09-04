@@ -76,7 +76,8 @@ DATA_PATH = Path("data")
 # -----------------------
 qdrant = QdrantClient(
     url=env['QDRANT_URL'],
-    api_key=env.get("QDRANT_API_KEY")  # jeśli używasz Qdrant Cloud
+    api_key=env.get("QDRANT_API_KEY"),  # jeśli używasz Qdrant Cloud
+    check_compatibility=False
 )
 
 # Tworzymy kolekcję tylko jeśli nie istnieje
