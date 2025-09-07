@@ -18,7 +18,7 @@ env = dotenv_values(".env")
 if 'QDRANT_URL' in st.secrets:
     env['QDRANT_URL']=st.secrets['QDRANT_URL']
 if 'QDRANT_API_KEY' in st.secrets:
-    env['OPENAI_API_KEY']=st.secrets['QDRANT_API_KEY']
+    env['QDRANT_API_KEY']=st.secrets['QDRANT_API_KEY']
     
 def get_openai_client():
     return OpenAI(api_key=st.session_state["openai_api_key"])
